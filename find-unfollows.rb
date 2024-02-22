@@ -1,9 +1,5 @@
 #!/usr/bin/ruby
-
-require 'json'
-require 'zip'
-
-ZIP_FILE_DATE_PATTERN = /twitter-([0-9]{4}-[0-9]{2}-[0-9]{2})-([0-9a-f]+)\.zip$/
+require_relative "twitter_archive"
 
 # data/follower.json is the Followers of the archive's account
 def read_followers(zip_file)
@@ -17,39 +13,27 @@ def read_following(zip_file)
   JSON.parse(json_following).collect {|following_obj| following_obj['following']}
 end
 
-archive_file_names = []
 dir, account = ARGV
-Dir.open(dir) {|d|
-  d.each {|file_name|
-    if file_name =~ ZIP_FILE_DATE_PATTERN and $2 == account
-      archive_file_names.push(file_name)
-    end
-  }
-}
-archive_file_names.sort!()
-last_archive = archive_file_names[-1]
+archive = TwitterArchive.new(dir, account)
 
 was_follower_on = {} # String: accountId => ['yyyy-mm-dd', ...]
 still_follower = [] # String: accountId
 still_following = [] # String: accountId
-archive_file_names.each {|zip_file_name|
-  Zip::File.open("#{dir}/#{zip_file_name}") {|zip_file|
-    zip_file_name =~ ZIP_FILE_DATE_PATTERN
-    archive_date = $1
-    read_followers(zip_file).each {|follower|
-      follower_account_id = follower['accountId']
-      (was_follower_on[follower_account_id] ||= []).push(archive_date)
-      if zip_file_name == last_archive
-        still_follower.push(follower_account_id)
-      end
-    }
-    if zip_file_name == last_archive
-      read_following(zip_file).each {|following|
-        following_account_id = following['accountId']
-        still_following.push(following_account_id)
-      }
+
+archive.each {|zip_file, archive_date, is_last|
+  read_followers(zip_file).each {|follower|
+    follower_account_id = follower['accountId']
+    (was_follower_on[follower_account_id] ||= []).push(archive_date)
+    if is_last
+      still_follower.push(follower_account_id)
     end
   }
+  if is_last
+    read_following(zip_file).each {|following|
+      following_account_id = following['accountId']
+      still_following.push(following_account_id)
+    }
+  end
 }
 
 ever_follower = was_follower_on.collect {|accountId, dates| accountId}
